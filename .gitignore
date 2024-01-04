@@ -1,0 +1,10 @@
+.vscode/
+build/
+ardens/
+imgui.ini
+*.exe
+
+.venv/
+__pycache__/
+*.swp
+*.swq
