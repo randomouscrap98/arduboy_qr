@@ -22,7 +22,6 @@
  */
 
 // Modified to store constants in progmem
-//#include "qr_ardspecial.h"
 #include <avr/pgmspace.h>
 
 #include <assert.h>
@@ -122,11 +121,11 @@ const int8_t NUM_ERROR_CORRECTION_BLOCKS[4 * 41] PROGMEM = {
 	-1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81,  // High
 };
 
-int getEccCodewordsPerBlock(int ecl, int version) {
+testable int getEccCodewordsPerBlock(int ecl, int version) {
     return pgm_read_byte(ECC_CODEWORDS_PER_BLOCK + ecl * 41 + version);
 }
 
-int getNumErrorCorrectionBlocks(int ecl, int version) {
+testable int getNumErrorCorrectionBlocks(int ecl, int version) {
     return pgm_read_byte(NUM_ERROR_CORRECTION_BLOCKS + ecl * 41 + version);
 }
 
