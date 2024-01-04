@@ -32,6 +32,9 @@
 extern "C" {
 #endif
 
+//extern int (*getEccCodewordsPerBlock)(int, int);
+//extern int (*getNumErrorCorrectionBlocks)(int, int);
+		//* getNumErrorCorrectionBlocks(e, v);
 
 /* 
  * This library creates QR Code symbols, which is a type of two-dimension barcode.
