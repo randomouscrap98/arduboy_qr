@@ -128,13 +128,13 @@ void setStateAbout()
 {
     state = GameState::About;
     arduboy.clear();
-    arduboy.print(F(" -[haloopdy - 2023]-\n"));
+    arduboy.print(F(" -[haloopdy - 2024]-\n"));
     arduboy.print(F(" -------------------\n"));
     arduboy.print(F("  QR Code Displayer \n\n"));
     arduboy.print(F(" * Enter text\n"));
     arduboy.print(F(" * On: Down+Right+B\n"));
     arduboy.print(F(" * Off: Up+Right+B\n"));
-    arduboy.print(F(" * Limit 100 chars\n"));
+    arduboy.print(F(" * Limit 63 chars\n"));
 
     // This way, it's only reset if you go all the way to the title screen
     memset(input, 0, MAXINPUT + 1);
@@ -171,13 +171,47 @@ void setStateDisplay()
     }
 }
 
-#define MENUWRAP(var, max, mov) { var = (var + mov + max) % max; }
+unsigned long buttonRepeats[6] = {0};
 
-unsigned long lastInputStart = 0;
-unsigned long lastInputRepeat = 0;
-const uint8_t DIR_BUTTONS = UP_BUTTON | DOWN_BUTTON | LEFT_BUTTON | RIGHT_BUTTON;
 const uint16_t REPEATDELAY = 250;
 const uint16_t REPEATREPEAT = 50;
+
+bool doRepeat(uint8_t button)
+{
+    uint8_t i = 0;
+
+    switch(button)
+    {
+        case A_BUTTON: i = 0; break;
+        case B_BUTTON: i = 1; break;
+        case UP_BUTTON: i = 2; break;
+        case DOWN_BUTTON: i = 3; break;
+        case LEFT_BUTTON: i = 4; break;
+        case RIGHT_BUTTON: i = 5; break;
+    }
+
+    bool pressed = false;
+
+    if (arduboy.pressed(button))
+    {
+        if(millis() > buttonRepeats[i])
+        {
+            buttonRepeats[i] = millis() + (buttonRepeats[i] ? REPEATREPEAT : REPEATDELAY);
+            pressed = true;
+        }
+    }
+    else
+    {
+        buttonRepeats[i] = 0;
+    }
+
+    return pressed;
+}
+
+#define MENUWRAP(var, max, mov) { var = (var + mov + max) % max; }
+
+
+const uint8_t DIR_BUTTONS = UP_BUTTON | DOWN_BUTTON | LEFT_BUTTON | RIGHT_BUTTON;
 
 void loop()
 {
@@ -193,31 +227,35 @@ void loop()
     {
         if (arduboy.anyPressed(DIR_BUTTONS))
         {
-            unsigned long ms = millis();
+            //unsigned long ms = millis();
 
-            if(ms - lastInputRepeat > REPEATREPEAT && ms - lastInputStart > REPEATDELAY)
-            {
-                if(!lastInputStart) lastInputStart = ms;
-                lastInputRepeat = ms;
+            //if(lastButton != arduboy.buttonsState() && nextButtonRepeat)
+            //    nextButtonRepeat = 0;
 
-                if (arduboy.pressed(UP_BUTTON))
+            //lastButton = arduboy.buttonsState();
+
+            //if(ms >= nextButtonRepeat)
+            //{
+                //nextButtonRepeat = ms + (nextButtonRepeat ? REPEATREPEAT : REPEATDELAY);
+
+                if (doRepeat(UP_BUTTON)) //arduboy.pressed(UP_BUTTON))
                     MENUWRAP(kby, KEYBOARD_LINECOUNT, -1);
-                if (arduboy.pressed(DOWN_BUTTON))
+                if (doRepeat(DOWN_BUTTON)) //arduboy.pressed(DOWN_BUTTON))
                     MENUWRAP(kby, KEYBOARD_LINECOUNT, 1);
-                if (arduboy.pressed(LEFT_BUTTON))
+                if (doRepeat(LEFT_BUTTON)) //arduboy.pressed(LEFT_BUTTON))
                     MENUWRAP(kbx, KEYBOARD_LINELENGTH, -1);
-                if (arduboy.pressed(RIGHT_BUTTON))
+                if (doRepeat(RIGHT_BUTTON)) //.pressed(RIGHT_BUTTON))
                     MENUWRAP(kbx, KEYBOARD_LINELENGTH, 1);
 
                 printKeyboard(kbx, kby);
-            }
+            //}
         }
-        else
-        {
-            //When they let go of the direction, don't delay their inputs anymore
-            lastInputRepeat = 0;
-            lastInputStart = 0;
-        }
+        //else
+        //{
+        //    //When they let go of the direction, don't delay their inputs anymore
+        //    nextButtonRepeat = 0;
+        //    lastButton = 0;
+        //}
 
         if (arduboy.justPressed(A_BUTTON))
         {
