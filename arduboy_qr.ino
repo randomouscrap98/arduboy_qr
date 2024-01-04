@@ -100,12 +100,20 @@ void printInput()
     setTextCursor(0,0);
     uint8_t offset = 0;
     char line[MAXLINEWIDTH + 1];
-    while(offset < strlen(input) && offset < MAXINPUT)
+    uint8_t len = strlen(input);
+    while(offset < len && offset < MAXINPUT)
     {
         memcpy(line, input + offset, MAXLINEWIDTH);
         line[MAXLINEWIDTH] = 0;
         arduboy.println(line);
         offset += MAXLINEWIDTH;
+    }
+    if(len < MAXINPUT)
+    {
+        setTextCursor(len % MAXLINEWIDTH, len / MAXLINEWIDTH);
+        setTextInvert(true);
+        arduboy.print(" ");
+        setTextInvert(false);
     }
 }
 
@@ -132,8 +140,8 @@ void setStateAbout()
     arduboy.print(F(" -------------------\n"));
     arduboy.print(F("  QR Code Displayer \n\n"));
     arduboy.print(F(" * Enter text\n"));
-    arduboy.print(F(" * On: Down+Right+B\n"));
-    arduboy.print(F(" * Off: Up+Right+B\n"));
+    arduboy.print(F(" * Show: Down+Right+B\n"));
+    arduboy.print(F(" * Hide: Up+Right+B\n"));
     arduboy.print(F(" * Limit 63 chars\n"));
 
     // This way, it's only reset if you go all the way to the title screen
@@ -225,37 +233,19 @@ void loop()
     }
     else if(state == GameState::Entry)
     {
-        if (arduboy.anyPressed(DIR_BUTTONS))
-        {
-            //unsigned long ms = millis();
+        uint8_t okbx = kbx, okby = kby;
 
-            //if(lastButton != arduboy.buttonsState() && nextButtonRepeat)
-            //    nextButtonRepeat = 0;
+        if (doRepeat(UP_BUTTON))
+            MENUWRAP(kby, KEYBOARD_LINECOUNT, -1);
+        if (doRepeat(DOWN_BUTTON))
+            MENUWRAP(kby, KEYBOARD_LINECOUNT, 1);
+        if (doRepeat(LEFT_BUTTON))
+            MENUWRAP(kbx, KEYBOARD_LINELENGTH, -1);
+        if (doRepeat(RIGHT_BUTTON))
+            MENUWRAP(kbx, KEYBOARD_LINELENGTH, 1);
 
-            //lastButton = arduboy.buttonsState();
-
-            //if(ms >= nextButtonRepeat)
-            //{
-                //nextButtonRepeat = ms + (nextButtonRepeat ? REPEATREPEAT : REPEATDELAY);
-
-                if (doRepeat(UP_BUTTON)) //arduboy.pressed(UP_BUTTON))
-                    MENUWRAP(kby, KEYBOARD_LINECOUNT, -1);
-                if (doRepeat(DOWN_BUTTON)) //arduboy.pressed(DOWN_BUTTON))
-                    MENUWRAP(kby, KEYBOARD_LINECOUNT, 1);
-                if (doRepeat(LEFT_BUTTON)) //arduboy.pressed(LEFT_BUTTON))
-                    MENUWRAP(kbx, KEYBOARD_LINELENGTH, -1);
-                if (doRepeat(RIGHT_BUTTON)) //.pressed(RIGHT_BUTTON))
-                    MENUWRAP(kbx, KEYBOARD_LINELENGTH, 1);
-
-                printKeyboard(kbx, kby);
-            //}
-        }
-        //else
-        //{
-        //    //When they let go of the direction, don't delay their inputs anymore
-        //    nextButtonRepeat = 0;
-        //    lastButton = 0;
-        //}
+        if(okbx != kbx || okby != kby)
+            printKeyboard(kbx, kby);
 
         if (arduboy.justPressed(A_BUTTON))
         {
