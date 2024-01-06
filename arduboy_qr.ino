@@ -85,7 +85,7 @@ void setup()
 }
 
 
-void setTextCursor(int x, int y) {
+void setTextCursor(uint8_t x, uint8_t y) {
     arduboy.setCursor(x * FONT_WIDTH, y * FONT_HEIGHT);
 }
 
@@ -94,9 +94,8 @@ void setTextInvert(bool inverted) {
     arduboy.setTextBackground(inverted ? WHITE : BLACK);
 }
 
-void printCentered(char * text) {
-    arduboy.setCursor((WIDTH - strlen(text) * FONT_WIDTH) / 2, (HEIGHT - FONT_HEIGHT) / 2);
-    arduboy.print(text);
+void setCentered(uint8_t len) {
+    arduboy.setCursor((WIDTH - len * FONT_WIDTH) / 2, (HEIGHT - FONT_HEIGHT) / 2);
 }
 
 
@@ -333,16 +332,13 @@ void setStateFullInput()
     printFullInput();
 }
 
-constexpr char GENERATESTRING[] PROGMEM = "Generating";
-
 void setStateDisplay()
 {
     arduboy.setFrameRate(QRFRAMERATE);
     state = GameState::Display;
     arduboy.clear();
-    char genstring[11] = {0};
-    memcpy_P(genstring, GENERATESTRING, 10);
-    printCentered(genstring);
+    setCentered(10); //10 chars
+    arduboy.print(F("Generating"));
     arduboy.display();
     generateQr(input);
     arduboy.clear();
