@@ -45,6 +45,8 @@ constexpr uint16_t REPEATDELAY = 250;
 constexpr uint16_t REPEATREPEAT = 50;
 constexpr uint8_t BUTTONCOUNT = 6;
 constexpr uint8_t DIR_BUTTONS = UP_BUTTON | DOWN_BUTTON | LEFT_BUTTON | RIGHT_BUTTON;
+constexpr uint8_t COMBO_SHOWQR = DOWN_BUTTON | RIGHT_BUTTON | B_BUTTON;
+constexpr uint8_t COMBO_HIDEQR = UP_BUTTON | RIGHT_BUTTON | B_BUTTON;
 
 #define MENUWRAP(var, max, mov) { var = (var + mov + max) % max; }
 
@@ -56,6 +58,7 @@ enum GameState {
 };
 
 
+// Our few little global variables
 char input[MAXINPUT + 1];
 
 //Just preallocate the maximum supported buffer size
@@ -66,6 +69,7 @@ uint8_t kbx, kby, okbx, okby;
 GameState state;
 
 unsigned long buttonRepeats[BUTTONCOUNT] = {0};
+
 
 
 void setup()
@@ -80,6 +84,7 @@ void setup()
 void setTextCursor(int x, int y) {
     arduboy.setCursor(x * FONT_WIDTH, y * FONT_HEIGHT);
 }
+
 void setTextInvert(bool inverted) {
     arduboy.setTextColor(inverted ? BLACK : WHITE);
     arduboy.setTextBackground(inverted ? WHITE : BLACK);
@@ -301,11 +306,11 @@ void loop()
         if (doRepeat(RIGHT_BUTTON))
             MENUWRAP(kbx, KEYBOARD_WIDTH, 1);
 
-        printKeyboard(false);
+        printKeyboard(false); //false = not the full keyboard
 
         if (arduboy.justPressed(A_BUTTON))
         {
-            input[strlen(input)] = pgm_read_byte(KEYLINES[kby] + kbx);
+            input[strlen(input)] = getKeyboardAt(kbx, kby);
             printInput();
         }
         if (doRepeat(B_BUTTON) && !arduboy.anyPressed(DIR_BUTTONS))
@@ -315,12 +320,13 @@ void loop()
         }
 
         //Special combo to generate qr
-        if (arduboy.pressed(DOWN_BUTTON | RIGHT_BUTTON | B_BUTTON))
+        if (arduboy.pressed(COMBO_SHOWQR))
             setStateDisplay();
     }
     else if(state == GameState::Display)
     {
-        if (arduboy.pressed(UP_BUTTON | RIGHT_BUTTON | B_BUTTON))
+        // Special combo to exit qr
+        if (arduboy.pressed(COMBO_HIDEQR))
             setStateEntry();
     }
 
