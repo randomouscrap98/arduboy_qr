@@ -1,3 +1,5 @@
+// haloopdy - 2024-01-04
+
 // Uncomment to use the arduboy FX version
 //#define FXVERSION
 
@@ -6,184 +8,144 @@
 
 Arduboy2 arduboy;
 
-const uint8_t FRAMERATE = 60;
+constexpr uint8_t FRAMERATE = 60;
 
-const uint8_t MAXLINEWIDTH = 21;
-const uint8_t MAXINPUT = MAXLINEWIDTH * 3;
-char input[MAXINPUT + 1];
+// Constants for QR code generation. You generally don't want to change these
+const uint8_t QR_MAXVERSION = 10;
+const qrcodegen_Ecc QR_MINECC = qrcodegen_Ecc_MEDIUM;
+const bool QR_BOOSTECL = true;
+const uint8_t QR_OVERDRAW = 2; //Amount on each side to overdraw the qr rect
 
-const uint8_t MAXVERSION = 9;
-const qrcodegen_Ecc MINECC = qrcodegen_Ecc_MEDIUM;
-const bool BOOSTECL = true;
+// Dimensions of screen in characters (for normal font)
+constexpr uint8_t FONT_WIDTH = 6;
+constexpr uint8_t FONT_HEIGHT = 8;
+constexpr uint8_t SCREENCHARWIDTH = WIDTH / FONT_WIDTH;
+constexpr uint8_t SCREENCHARHEIGHT = HEIGHT / FONT_HEIGHT;
 
-//Just preallocate the maximum supported buffer size
-uint8_t qrbuffer[qrcodegen_BUFFER_LEN_FOR_VERSION(MAXVERSION)];
-uint8_t tempbuffer[qrcodegen_BUFFER_LEN_FOR_VERSION(MAXVERSION)];
+// Input and keyboard dimensions
+constexpr uint8_t MAXLINEWIDTH = SCREENCHARWIDTH;
+constexpr uint8_t MAXINPUT = MAXLINEWIDTH * (128 / MAXLINEWIDTH); //Arbitrarily chosen to fit within 128
+constexpr uint8_t KEYBOARD_WIDTH = SCREENCHARWIDTH;
+constexpr uint8_t KEYBOARD_HEIGHT = 5;
+constexpr uint8_t KEYBOARD_STARTY = SCREENCHARHEIGHT - KEYBOARD_HEIGHT; //In characters
+constexpr uint8_t KEYBOARD_STARTX = 0;
 
-const uint8_t KEYBOARD_LINELENGTH = 21;
-const uint8_t KEYBOARD_LINECOUNT = 5;
-const uint8_t KEYBOARD_STARTY = 3;
-const uint8_t KEYBOARD_STARTX = 0;
+// The keyboard itself
+constexpr char KEYLINE1[] PROGMEM = "ABCDEFGHIJKLM[01234]?";
+constexpr char KEYLINE2[] PROGMEM = "NOPQRSTUVWXYZ(56789)!";
+constexpr char KEYLINE3[] PROGMEM = "abcdefghijklm{./:@&}#";
+constexpr char KEYLINE4[] PROGMEM = "nopqrstuvwxyz<+-=*%>$";
+constexpr char KEYLINE5[] PROGMEM = "     |^_\\;,~`\"'      ";
+const char * KEYLINES[KEYBOARD_HEIGHT] = {
+    KEYLINE1, KEYLINE2, KEYLINE3, KEYLINE4, KEYLINE5
+};
 
-const char KEYLINE1[] PROGMEM = "ABCDEFGHIJKLM[01234]?";
-const char KEYLINE2[] PROGMEM = "NOPQRSTUVWXYZ(56789)!";
-const char KEYLINE3[] PROGMEM = "abcdefghijklm{./:@&}#";
-const char KEYLINE4[] PROGMEM = "nopqrstuvwxyz<+-=*%>$";
-const char KEYLINE5[] PROGMEM = "     |^_\\;,~`\"'      ";
+// Button / repetition constants (greatly changes the feel of the keyboard)
+constexpr uint16_t REPEATDELAY = 250;
+constexpr uint16_t REPEATREPEAT = 50;
+constexpr uint8_t BUTTONCOUNT = 6;
+constexpr uint8_t DIR_BUTTONS = UP_BUTTON | DOWN_BUTTON | LEFT_BUTTON | RIGHT_BUTTON;
 
-const char * KEYLINES[KEYBOARD_LINECOUNT];
+#define MENUWRAP(var, max, mov) { var = (var + mov + max) % max; }
 
+// States the "game" could be in (idk, I just always call it that)
 enum GameState {
     About,
     Entry,
     Display
 };
 
-uint8_t kbx, kby;
+
+char input[MAXINPUT + 1];
+
+//Just preallocate the maximum supported buffer size
+uint8_t qrbuffer[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_MAXVERSION)];
+uint8_t tempbuffer[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_MAXVERSION)];
+
+uint8_t kbx, kby, okbx, okby;
 GameState state;
+
+unsigned long buttonRepeats[BUTTONCOUNT] = {0};
+
 
 void setup()
 {
-    //Really kinda dumb lol
-    KEYLINES[0] = KEYLINE1;
-    KEYLINES[1] = KEYLINE2;
-    KEYLINES[2] = KEYLINE3;
-    KEYLINES[3] = KEYLINE4;
-    KEYLINES[4] = KEYLINE5;
-
     // Initialize the Arduboy
     arduboy.begin();
     arduboy.setFrameRate(FRAMERATE);
-
     setStateAbout();
 }
 
-void resetKeyboard()
-{
-    kbx = 0;
-    kby = 0;
-}
 
 void setTextCursor(int x, int y) {
-    arduboy.setCursor(x * 6, y * 8);
+    arduboy.setCursor(x * FONT_WIDTH, y * FONT_HEIGHT);
 }
 void setTextInvert(bool inverted) {
     arduboy.setTextColor(inverted ? BLACK : WHITE);
     arduboy.setTextBackground(inverted ? WHITE : BLACK);
 }
 
-void printKeyboard(uint8_t cx, uint8_t cy)
+
+// Return the character on the keyboard at the given location
+void resetKeyboard()
 {
-    char line[KEYBOARD_LINELENGTH + 1];
-    line[KEYBOARD_LINELENGTH] = 0;
+    // There are several values related to the keyboard. button repetition
+    // isn't necessarily just for the keyboard, but we need it reset upon start
+    kbx = 0; kby = 0;
+    okbx = -1; okby = -1;
+    memset(buttonRepeats, 0, BUTTONCOUNT);
+}
+
+char getKeyboardAt(uint8_t x, uint8_t y)
+{
+    return pgm_read_byte(KEYLINES[y] + x);
+}
+
+// Print a single key. It's up to you to invert it or not
+void printKeyboardKey(uint8_t x, uint8_t y)
+{
+    setTextCursor(KEYBOARD_STARTX + x, KEYBOARD_STARTY + y);
+    arduboy.print(getKeyboardAt(x, y));
+}
+
+void printKeyboard(bool full)
+{
+    char line[KEYBOARD_WIDTH + 1];
+    line[KEYBOARD_WIDTH] = 0;
 
     setTextInvert(false);
 
-    for(uint8_t i = 0; i < KEYBOARD_LINECOUNT; i++)
+    //Printing the keyboard is a bit funny. We don't really need to print the full
+    //keyboard most of the time. Tracking when that happens kind of sucks, but our 
+    //program is generally simple enough that it doesn't matter.
+    if(full)
     {
-        memcpy_P(line, KEYLINES[i], KEYBOARD_LINELENGTH);
-        setTextCursor(KEYBOARD_STARTX, KEYBOARD_STARTY + i);
-        arduboy.print(line);
-    }
-
-    setTextInvert(true);
-    setTextCursor(KEYBOARD_STARTX + cx, KEYBOARD_STARTY + cy);
-    arduboy.print((char)pgm_read_byte(KEYLINES[cy] + cx));
-
-    setTextInvert(false);
-}
-
-void printInput()
-{
-    arduboy.fillRect(0, 0, 128, 24, BLACK);
-    arduboy.drawFastHLine(0, 22, 128, WHITE);
-    setTextCursor(0,0);
-    uint8_t offset = 0;
-    char line[MAXLINEWIDTH + 1];
-    uint8_t len = strlen(input);
-    while(offset < len && offset < MAXINPUT)
-    {
-        memcpy(line, input + offset, MAXLINEWIDTH);
-        line[MAXLINEWIDTH] = 0;
-        arduboy.println(line);
-        offset += MAXLINEWIDTH;
-    }
-    if(len < MAXINPUT)
-    {
-        setTextCursor(len % MAXLINEWIDTH, len / MAXLINEWIDTH);
-        setTextInvert(true);
-        arduboy.print(" ");
-        setTextInvert(false);
-    }
-}
-
-char getKeyboardAt(uint8_t cx, uint8_t cy)
-{
-    return pgm_read_byte(KEYLINES[cy] + cx);
-}
-
-bool generateQr(char * text)
-{
-    //"https://github.com/nayuki/QR-Code-generator/tree/master/c",
-    return qrcodegen_encodeText(
-        text, tempbuffer, qrbuffer, 
-        MINECC, qrcodegen_VERSION_MIN, MAXVERSION, qrcodegen_Mask_AUTO, BOOSTECL);
-}
-
-//For the various states, we display portions of the static screen to 
-//reduce battery usage. I think...
-void setStateAbout()
-{
-    state = GameState::About;
-    arduboy.clear();
-    arduboy.print(F(" -[haloopdy - 2024]-\n"));
-    arduboy.print(F(" -------------------\n"));
-    arduboy.print(F("  QR Code Displayer \n\n"));
-    arduboy.print(F(" * Enter text\n"));
-    arduboy.print(F(" * Show: Down+Right+B\n"));
-    arduboy.print(F(" * Hide: Up+Right+B\n"));
-    arduboy.print(F(" * Limit 63 chars\n"));
-
-    // This way, it's only reset if you go all the way to the title screen
-    memset(input, 0, MAXINPUT + 1);
-}
-
-void setStateEntry()
-{
-    state = GameState::Entry;
-    resetKeyboard();
-    arduboy.clear();
-    printKeyboard(kbx, kby);
-    printInput();
-}
-
-void setStateDisplay()
-{
-    state = GameState::Display;
-
-    //generateQr("https://github.com/nayuki/QR-Code-generator/tree/master/c");
-    arduboy.clear();
-    generateQr(input);
-
-    int size = qrcodegen_getSize(qrbuffer);
-    int sizemod = floor(60.0 / size);
-    int realsize = sizemod * size;
-    int startx = (128 - realsize - 4) / 2;
-    int starty = (64 - realsize - 4) / 2;
-
-    arduboy.fillRect(startx, starty, realsize + 4, realsize + 4, WHITE);
-    for (int y = 0; y < size; y++) {
-        for (int x = 0; x < size; x++) {
-            arduboy.fillRect(startx + x * sizemod + 2, starty + y * sizemod + 2, sizemod, sizemod, qrcodegen_getModule(qrbuffer, x, y) ? BLACK : WHITE);
+        for (uint8_t i = 0; i < KEYBOARD_HEIGHT; i++)
+        {
+            memcpy_P(line, KEYLINES[i], KEYBOARD_WIDTH);
+            setTextCursor(KEYBOARD_STARTX, KEYBOARD_STARTY + i);
+            arduboy.print(line);
         }
     }
+    else if (okbx != kbx || okby != kby)
+    {
+        // Reset the old location
+        printKeyboardKey(okbx, okby);
+    }
+
+    // Print the new location inverted
+    setTextInvert(true);
+    printKeyboardKey(kbx, kby);
+    setTextInvert(false);
+    
+    // Save the last printed location.
+    okbx = kbx;
+    okby = kby;
 }
 
-unsigned long buttonRepeats[6] = {0};
-
-const uint16_t REPEATDELAY = 250;
-const uint16_t REPEATREPEAT = 50;
-
+// Function to enable simple button repetition. Returns whether a button
+// is considered pressed for this frame. ONLY CALL THIS ONCE PER PER BUTTON!
+// Later we may make it safe to call as often as you wish
 bool doRepeat(uint8_t button)
 {
     uint8_t i = 0;
@@ -216,10 +178,107 @@ bool doRepeat(uint8_t button)
     return pressed;
 }
 
-#define MENUWRAP(var, max, mov) { var = (var + mov + max) % max; }
+
+// Print the input portion of the screen. The input includes the horizontal line
+// above the keyboard, since it's used to display certain stats
+void printInput()
+{
+    arduboy.fillRect(0, 0, WIDTH, 24, BLACK);
+    arduboy.drawFastHLine(0, 22, WIDTH, WHITE);
+    setTextCursor(0,0);
+    uint8_t offset = 0;
+    char line[MAXLINEWIDTH + 1];
+    uint8_t len = strlen(input);
+    while(offset < len && offset < MAXINPUT)
+    {
+        memcpy(line, input + offset, MAXLINEWIDTH);
+        line[MAXLINEWIDTH] = 0;
+        arduboy.println(line);
+        offset += MAXLINEWIDTH;
+    }
+    if(len < MAXINPUT)
+    {
+        // Print a cursor (could just make a rect...)
+        setTextCursor(len % MAXLINEWIDTH, len / MAXLINEWIDTH);
+        setTextInvert(true);
+        arduboy.print(" ");
+        setTextInvert(false);
+    }
+}
+
+bool generateQr(char * text)
+{
+    //"https://github.com/nayuki/QR-Code-generator/tree/master/c",
+    return qrcodegen_encodeText(
+        text, tempbuffer, qrbuffer, 
+        QR_MINECC, qrcodegen_VERSION_MIN, QR_MAXVERSION, qrcodegen_Mask_AUTO, QR_BOOSTECL);
+}
+
+void drawQr()
+{
+    int size = qrcodegen_getSize(qrbuffer);
+    int sizemod = floor((float)(HEIGHT - 2 * QR_OVERDRAW) / size);
+    int realsize = sizemod * size;
+    int startx = (WIDTH - realsize - 2 * QR_OVERDRAW) / 2;
+    int starty = (HEIGHT - realsize - 2 * QR_OVERDRAW) / 2;
+
+    // White rect for qr code background.
+    arduboy.fillRect(startx, starty, realsize + 2 * QR_OVERDRAW, realsize + 2 * QR_OVERDRAW, WHITE);
+
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            // Silly, but we technically only need to draw the black pixels. It's slightly less code too?
+            if(qrcodegen_getModule(qrbuffer, x, y)) {
+                arduboy.fillRect(startx + x * sizemod + QR_OVERDRAW, starty + y * sizemod + QR_OVERDRAW, sizemod, sizemod, BLACK);
+            }
+        }
+    }
+}
 
 
-const uint8_t DIR_BUTTONS = UP_BUTTON | DOWN_BUTTON | LEFT_BUTTON | RIGHT_BUTTON;
+//For the various states, we display portions of the static screen to 
+//reduce battery usage. I think...
+void setStateAbout()
+{
+    state = GameState::About;
+    arduboy.clear();
+
+    // Wasting serious program memory here but whatever,
+    // also serves as a full clear if I need it (or does it?)
+    arduboy.print(F(" -[haloopdy - 2024]- \n"));
+    arduboy.print(F(" ------------------- \n"));
+    arduboy.print(F("  QR Code Displayer  \n\n"));
+    arduboy.print(F(" * Enter text        \n"));
+    arduboy.print(F(" * Show: Down+Right+B\n"));
+    arduboy.print(F(" * Hide: Up+Right+B  \n"));
+    arduboy.print(F(" * Limit "));
+    arduboy.print(MAXINPUT);
+    arduboy.print(F(" chars    \n"));
+
+    // This way, it's only reset if you go all the way to the title screen
+    memset(input, 0, MAXINPUT + 1);
+}
+
+void setStateEntry()
+{
+    // Notice that we don't reset the input here. This lets you exit the
+    // qr and still have your input there, so don't clear it here!
+    state = GameState::Entry;
+    arduboy.clear();
+    resetKeyboard();
+    printKeyboard(true);
+    printInput();
+}
+
+void setStateDisplay()
+{
+    state = GameState::Display;
+    arduboy.clear();
+    generateQr(input);
+    drawQr();
+}
+
+
 
 void loop()
 {
@@ -233,26 +292,23 @@ void loop()
     }
     else if(state == GameState::Entry)
     {
-        uint8_t okbx = kbx, okby = kby;
-
         if (doRepeat(UP_BUTTON))
-            MENUWRAP(kby, KEYBOARD_LINECOUNT, -1);
+            MENUWRAP(kby, KEYBOARD_HEIGHT, -1);
         if (doRepeat(DOWN_BUTTON))
-            MENUWRAP(kby, KEYBOARD_LINECOUNT, 1);
+            MENUWRAP(kby, KEYBOARD_HEIGHT, 1);
         if (doRepeat(LEFT_BUTTON))
-            MENUWRAP(kbx, KEYBOARD_LINELENGTH, -1);
+            MENUWRAP(kbx, KEYBOARD_WIDTH, -1);
         if (doRepeat(RIGHT_BUTTON))
-            MENUWRAP(kbx, KEYBOARD_LINELENGTH, 1);
+            MENUWRAP(kbx, KEYBOARD_WIDTH, 1);
 
-        if(okbx != kbx || okby != kby)
-            printKeyboard(kbx, kby);
+        printKeyboard(false);
 
         if (arduboy.justPressed(A_BUTTON))
         {
             input[strlen(input)] = pgm_read_byte(KEYLINES[kby] + kbx);
             printInput();
         }
-        if (arduboy.justPressed(B_BUTTON) && !arduboy.anyPressed(DIR_BUTTONS))
+        if (doRepeat(B_BUTTON) && !arduboy.anyPressed(DIR_BUTTONS))
         {
             input[max(0, strlen(input) - 1)] = 0;
             printInput();
