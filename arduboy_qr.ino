@@ -9,9 +9,10 @@
 Arduboy2 arduboy;
 
 constexpr uint8_t FRAMERATE = 60;
+constexpr uint8_t QRFRAMERATE = 5;
 
 // Constants for QR code generation. You generally don't want to change these
-const uint8_t QR_MAXVERSION = 10;
+const uint8_t QR_MAXVERSION = 9;
 const qrcodegen_Ecc QR_MINECC = qrcodegen_Ecc_MEDIUM;
 const bool QR_BOOSTECL = true;
 const uint8_t QR_OVERDRAW = 2; //Amount on each side to overdraw the qr rect
@@ -48,6 +49,7 @@ constexpr uint8_t BUTTONCOUNT = 6;
 constexpr uint8_t DIR_BUTTONS = UP_BUTTON | DOWN_BUTTON | LEFT_BUTTON | RIGHT_BUTTON;
 constexpr uint8_t COMBO_SHOWQR = DOWN_BUTTON | RIGHT_BUTTON | B_BUTTON;
 constexpr uint8_t COMBO_HIDEQR = UP_BUTTON | RIGHT_BUTTON | B_BUTTON;
+constexpr uint8_t COMBO_SHOWINPUT = DOWN_BUTTON | B_BUTTON;
 
 #define MENUWRAP(var, max, mov) { var = (var + mov + max) % max; }
 
@@ -55,6 +57,7 @@ constexpr uint8_t COMBO_HIDEQR = UP_BUTTON | RIGHT_BUTTON | B_BUTTON;
 enum GameState {
     About,
     Entry,
+    FullInput,
     Display
 };
 
@@ -89,6 +92,11 @@ void setTextCursor(int x, int y) {
 void setTextInvert(bool inverted) {
     arduboy.setTextColor(inverted ? BLACK : WHITE);
     arduboy.setTextBackground(inverted ? WHITE : BLACK);
+}
+
+void printCentered(char * text) {
+    arduboy.setCursor((WIDTH - strlen(text) * FONT_WIDTH) / 2, (HEIGHT - FONT_HEIGHT) / 2);
+    arduboy.print(text);
 }
 
 
@@ -223,6 +231,25 @@ void printInput()
     }
 }
 
+void printFullInput()
+{
+    uint8_t inlen = strlen(input);
+
+    setTextCursor(0,0);
+
+    // We can display the full window
+    uint8_t offset = 0;
+    char line[MAXLINEWIDTH + 1];
+
+    while(offset < inlen && offset < MAXINPUT)
+    {
+        memcpy(line, input + offset, MAXLINEWIDTH);
+        line[MAXLINEWIDTH] = 0;
+        arduboy.println(line);
+        offset += MAXLINEWIDTH;
+    }
+}
+
 void tryAddInput()
 {
     input[min(strlen(input), MAXINPUT - 1)] = getKeyboardAt(kbx, kby);
@@ -276,8 +303,9 @@ void setStateAbout()
     arduboy.print(F(" ------------------- \n"));
     arduboy.print(F("  QR Code Displayer  \n\n"));
     arduboy.print(F(" * Enter text        \n"));
-    arduboy.print(F(" * Show: Down+Right+B\n"));
-    arduboy.print(F(" * Hide: Up+Right+B  \n"));
+    arduboy.print(F(" * All text: (\x19\x42) \n"));
+    arduboy.print(F(" * Show QR: (\x19\x1A\x42)\n"));
+    arduboy.print(F(" * Hide QR: (\x18\x1A\x42)\n"));
     arduboy.print(F(" * Limit "));
     arduboy.print(MAXINPUT);
     arduboy.print(F(" chars    \n"));
@@ -288,6 +316,7 @@ void setStateAbout()
 
 void setStateEntry()
 {
+    arduboy.setFrameRate(FRAMERATE);
     // Notice that we don't reset the input here. This lets you exit the
     // qr and still have your input there, so don't clear it here!
     state = GameState::Entry;
@@ -297,11 +326,22 @@ void setStateEntry()
     printInput();
 }
 
+void setStateFullInput()
+{
+    state = GameState::FullInput;
+    arduboy.clear();
+    printFullInput();
+}
+
 void setStateDisplay()
 {
+    arduboy.setFrameRate(QRFRAMERATE);
     state = GameState::Display;
     arduboy.clear();
+    printCentered("Generating");
+    arduboy.display();
     generateQr(input);
+    arduboy.clear();
     drawQr();
 }
 
@@ -328,7 +368,10 @@ void loop()
         if (doRepeat(RIGHT_BUTTON))
             MENUWRAP(kbx, KEYBOARD_WIDTH, 1);
 
-        printKeyboard(false); //false = not the full keyboard
+        printKeyboard(false); // false = not the full keyboard
+
+        if (arduboy.pressed(COMBO_SHOWINPUT))
+            setStateFullInput();
 
         if (arduboy.justPressed(A_BUTTON))
         {
@@ -341,7 +384,17 @@ void loop()
             printInput();
         }
 
-        //Special combo to generate qr
+        // Special combo to generate qr
+        if (arduboy.pressed(COMBO_SHOWQR))
+            setStateDisplay();
+    }
+    else if(state == GameState::FullInput)
+    {
+        //A very simple state indeed
+        if(!arduboy.pressed(COMBO_SHOWINPUT))
+            setStateEntry();
+
+        // Special combo to generate qr
         if (arduboy.pressed(COMBO_SHOWQR))
             setStateDisplay();
     }
