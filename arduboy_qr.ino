@@ -333,12 +333,16 @@ void setStateFullInput()
     printFullInput();
 }
 
+constexpr char GENERATESTRING[] PROGMEM = "Generating";
+
 void setStateDisplay()
 {
     arduboy.setFrameRate(QRFRAMERATE);
     state = GameState::Display;
     arduboy.clear();
-    printCentered("Generating");
+    char genstring[11] = {0};
+    memcpy_P(genstring, GENERATESTRING, 10);
+    printCentered(genstring);
     arduboy.display();
     generateQr(input);
     arduboy.clear();
