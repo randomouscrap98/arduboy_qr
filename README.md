@@ -9,3 +9,4 @@ Can be built for either standard Arduboys (no saving) or Arduboy FX (saving enab
 - Press DOWN + RIGHT + B to display QR
 - Press UP + RIGHT + B to hide QR again
 
+<img src="https://raw.githubusercontent.com/randomouscrap98/arduboy_qr/main/showcase.gif" width=256>
