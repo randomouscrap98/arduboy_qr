@@ -29,6 +29,7 @@ constexpr uint8_t KEYBOARD_WIDTH = SCREENCHARWIDTH;
 constexpr uint8_t KEYBOARD_HEIGHT = 5;
 constexpr uint8_t KEYBOARD_STARTY = SCREENCHARHEIGHT - KEYBOARD_HEIGHT; //In characters
 constexpr uint8_t KEYBOARD_STARTX = 0;
+constexpr uint8_t INPUT_PIXELHEIGHT = (SCREENCHARHEIGHT - KEYBOARD_HEIGHT) * FONT_HEIGHT;
 
 // The keyboard itself
 constexpr char KEYLINE1[] PROGMEM = "ABCDEFGHIJKLM[01234]?";
@@ -188,27 +189,48 @@ bool doRepeat(uint8_t button)
 // above the keyboard, since it's used to display certain stats
 void printInput()
 {
-    arduboy.fillRect(0, 0, WIDTH, 24, BLACK);
-    arduboy.drawFastHLine(0, 22, WIDTH, WHITE);
+    // Clear entire input area
+    arduboy.fillRect(0, 0, WIDTH, INPUT_PIXELHEIGHT, BLACK);
+
+    uint8_t inlen = strlen(input);
+
+    // Draw the rect for the buffer fullness. This rect only works if the input 
+    // is less than 128!! IDK, maybe have an assert somewhere? Those don't really work...
+    arduboy.drawRect(WIDTH - MAXINPUT - 2, INPUT_PIXELHEIGHT - 4, WIDTH, 3, WHITE);
+    arduboy.drawFastHLine(WIDTH - MAXINPUT - 1, INPUT_PIXELHEIGHT - 3, inlen, WHITE);
+
     setTextCursor(0,0);
-    uint8_t offset = 0;
+    // We display two lines at a time, but the math works out to just - MAXLINEWIDTH
+    uint8_t offset = min(max(0, MAXLINEWIDTH * ((inlen - MAXLINEWIDTH) / MAXLINEWIDTH)), MAXINPUT - 2 * MAXLINEWIDTH);
+    uint8_t ooffset = offset;
     char line[MAXLINEWIDTH + 1];
-    uint8_t len = strlen(input);
-    while(offset < len && offset < MAXINPUT)
+
+    while(offset < inlen && offset < MAXINPUT)
     {
         memcpy(line, input + offset, MAXLINEWIDTH);
         line[MAXLINEWIDTH] = 0;
         arduboy.println(line);
         offset += MAXLINEWIDTH;
     }
-    if(len < MAXINPUT)
+
+    if(inlen < MAXINPUT)
     {
         // Print a cursor (could just make a rect...)
-        setTextCursor(len % MAXLINEWIDTH, len / MAXLINEWIDTH);
+        setTextCursor((inlen - ooffset) % MAXLINEWIDTH, (inlen - ooffset) / MAXLINEWIDTH);
         setTextInvert(true);
         arduboy.print(" ");
         setTextInvert(false);
     }
+}
+
+void tryAddInput()
+{
+    input[min(strlen(input), MAXINPUT - 1)] = getKeyboardAt(kbx, kby);
+}
+
+void tryRemoveInput()
+{
+    input[max(0, strlen(input) - 1)] = 0;
 }
 
 bool generateQr(char * text)
@@ -310,12 +332,12 @@ void loop()
 
         if (arduboy.justPressed(A_BUTTON))
         {
-            input[strlen(input)] = getKeyboardAt(kbx, kby);
+            tryAddInput();
             printInput();
         }
         if (doRepeat(B_BUTTON) && !arduboy.anyPressed(DIR_BUTTONS))
         {
-            input[max(0, strlen(input) - 1)] = 0;
+            tryRemoveInput();
             printInput();
         }
 
