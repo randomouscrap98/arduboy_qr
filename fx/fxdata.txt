@@ -1,0 +1,6 @@
+// No idea if this is how this works...
+
+savesection
+
+// I mostly just want to read save raw, so this is here just for fun
+raw_t savbuf = "save_init.bin"

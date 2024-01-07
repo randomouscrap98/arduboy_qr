@@ -1,7 +1,12 @@
 // haloopdy - 2024-01-04
 
-// Uncomment to use the arduboy FX version
-//#define FXVERSION
+// Uncomment to generate the arduboy FX version
+// #define FXVERSION
+
+#ifdef FXVERSION
+#include <ArduboyFX.h>      // required to access the FX external flash
+#include "fx/fxdata.h"
+#endif
 
 #include <Arduboy2.h>
 #include "qrcodegen.h"
@@ -81,9 +86,21 @@ void setup()
     // Initialize the Arduboy
     arduboy.begin();
     arduboy.setFrameRate(FRAMERATE);
+    #ifdef FXVERSION
+    FX::begin(FX_DATA_PAGE);    // initialise FX chip
+    #endif
     setStateAbout();
 }
 
+
+void doDisplay()
+{
+#ifdef FXVERSION
+    FX::display(false);
+#else
+    arduboy.display();
+#endif
+}
 
 void setTextCursor(uint8_t x, uint8_t y) {
     arduboy.setCursor(x * FONT_WIDTH, y * FONT_HEIGHT);
@@ -339,7 +356,7 @@ void setStateDisplay()
     arduboy.clear();
     setCentered(10); //10 chars
     arduboy.print(F("Generating"));
-    arduboy.display();
+    doDisplay();
     generateQr(input);
     arduboy.clear();
     drawQr();
@@ -405,5 +422,5 @@ void loop()
             setStateEntry();
     }
 
-    arduboy.display();
+    doDisplay();
 }
