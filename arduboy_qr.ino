@@ -83,11 +83,13 @@ unsigned long buttonRepeats[BUTTONCOUNT] = {0};
 constexpr uint8_t DISPLAYSLOTS = SCREENCHARHEIGHT - 1;
 constexpr uint16_t FX_PAGESIZE = 256;
 constexpr uint16_t FX_SLOTSIZE = 256; //Size of each qr "slot" (this might not really be it)
+constexpr uint16_t FX_UNUSED = 128;
 constexpr uint16_t FX_SLOTCOUNT = 4096 / FX_SLOTSIZE; // Wouldn't let me use the constant!
 
 // Add these together to get the real slot
 int8_t slot_offset = 0;
 int8_t slot_cursor = 0;
+uint8_t temp_disable_slots = false;
 
 // Display ALL slots. Just easier that way, too much moving around
 void displaySlots()
@@ -120,7 +122,7 @@ inline uint8_t calculateSlot()
 
 inline void fxReadSave(uint24_t offset, uint8_t * buffer, size_t length)
 {
-    FX::readDataBytes(FX_PAGESIZE + offset, buffer, length);
+    FX::readSaveBytes(offset, buffer, length);
 }
 
 void displayCurrentSlot()
@@ -153,14 +155,24 @@ void copySlotToInput()
 {
     uint8_t slot = calculateSlot();
 
-    //Safe to purely copy, the 0 is in there
-    fxReadSave((slot * FX_SLOTSIZE), (uint8_t *)input, MAXINPUT);
+    //Safe to purely copy, the 0 is in there (MAXINPUT + 1 to include 0 on mega long string)
+    fxReadSave((slot * FX_SLOTSIZE), (uint8_t *)input, MAXINPUT + 1);
     input[MAXINPUT] = 0;
 }
 
+void fxWriteSave()
+{
+    //Need to copy the contents of input into the temp buffer, since this function
+    //writes a WHOLE page
+    uint8_t slot = calculateSlot();
+    memcpy(tempbuffer, input, MAXINPUT + 1);
+    //Preserve the other part of the save (this is just for now)
+    //fxReadSave(slot * FX_SLOTSIZE + (FX_SLOTSIZE - FX_UNUSED), tempbuffer + FX_UNUSED, FX_UNUSED);
+    //Currently, each slot is precisely the page size
+    FX::writeSavePage(slot, tempbuffer);
+}
+
 #endif
-
-
 
 
 
@@ -170,7 +182,7 @@ void setup()
     arduboy.begin();
     arduboy.setFrameRate(FRAMERATE);
     #ifdef FXVERSION
-    FX::begin(FX_DATA_PAGE);    // initialise FX chip
+    FX::begin(FX_DATA_PAGE, FX_SAVE_PAGE);    // initialise FX chip
     #endif
     setStateAbout();
 }
@@ -178,11 +190,11 @@ void setup()
 
 void doDisplay()
 {
-#ifdef FXVERSION
+    #ifdef FXVERSION
     FX::display(false);
-#else
+    #else
     arduboy.display();
-#endif
+    #endif
 }
 
 void setTextCursor(uint8_t x, uint8_t y) {
@@ -351,7 +363,9 @@ void printFullInput()
 
 void tryAddInput()
 {
-    input[min(strlen(input), MAXINPUT - 1)] = getKeyboardAt(kbx, kby);
+    uint8_t inlen = strlen(input);
+    input[min(inlen, MAXINPUT - 1)] = getKeyboardAt(kbx, kby);
+    input[min(inlen + 1, MAXINPUT)] = 0;
 }
 
 void tryRemoveInput()
@@ -393,6 +407,7 @@ void drawQr()
 //reduce battery usage. I think...
 void setStateAbout()
 {
+    arduboy.setFrameRate(FRAMERATE);
     state = GameState::About;
     arduboy.clear();
 
@@ -415,6 +430,7 @@ void setStateAbout()
 
 void setStateSlotSelect()
 {
+    arduboy.setFrameRate(FRAMERATE);
     state = GameState::SlotSelect;
     resetKeyboard();
     #ifdef FXVERSION
@@ -472,11 +488,18 @@ void loop()
     {
         #ifdef FXVERSION
         bool redraw = false;
-        if (doRepeat(UP_BUTTON)) {
-            slot_cursor--; redraw = true;
-        }
-        if (doRepeat(DOWN_BUTTON)) {
-            slot_cursor++; redraw = true;
+        if(!temp_disable_slots)
+        {
+            if (doRepeat(UP_BUTTON))
+            {
+                slot_cursor--;
+                redraw = true;
+            }
+            if (doRepeat(DOWN_BUTTON))
+            {
+                slot_cursor++;
+                redraw = true;
+            }
         }
         if(slot_cursor < 0) {
             slot_cursor = 0;
@@ -488,15 +511,17 @@ void loop()
         }
         if(arduboy.justReleased(B_BUTTON)) {
             redraw = true;
+            temp_disable_slots = false;
         }
 
         if(arduboy.justPressed(A_BUTTON))
         {
             //Copy the mem into input
+            temp_disable_slots = false;
             copySlotToInput();
             setStateEntry();
         }
-        else if(arduboy.pressed(B_BUTTON))
+        else if(arduboy.pressed(B_BUTTON) && !temp_disable_slots)
         {
             // Just constantly display, hopefully not too laggy...?
             displayCurrentSlot();
@@ -538,7 +563,12 @@ void loop()
 
         // Special combo to generate qr
         if (arduboy.pressed(COMBO_SHOWQR))
+        {
+            #ifdef FXVERSION
+            fxWriteSave();
+            #endif
             setStateDisplay();
+        }
     }
     else if(state == GameState::FullInput)
     {
@@ -552,9 +582,17 @@ void loop()
     }
     else if(state == GameState::Display)
     {
+        //if(!temp_disable_slots) //Reuse variable
+        //{
+        //    fxWriteSave();
+        //    temp_disable_slots = true;
+        //}
+
         // Special combo to exit qr
         if (arduboy.pressed(COMBO_HIDEQR))
-            setStateEntry();
+        {
+            setStateSlotSelect();
+        }
     }
 
     doDisplay();
