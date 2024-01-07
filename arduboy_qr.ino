@@ -1,12 +1,7 @@
 // haloopdy - 2024-01-04
 
 // Uncomment to generate the arduboy FX version
-// #define FXVERSION
-
-#ifdef FXVERSION
-#include <ArduboyFX.h>      // required to access the FX external flash
-#include "fx/fxdata.h"
-#endif
+#define FXVERSION
 
 #include <Arduboy2.h>
 #include "qrcodegen.h"
@@ -62,6 +57,7 @@ constexpr uint8_t COMBO_SHOWINPUT = DOWN_BUTTON | B_BUTTON;
 enum GameState {
     About,
     Entry,
+    SlotSelect, // This is an FX exclusive, but it's fine to exist
     FullInput,
     Display
 };
@@ -78,6 +74,88 @@ uint8_t kbx, kby, okbx, okby;
 GameState state;
 
 unsigned long buttonRepeats[BUTTONCOUNT] = {0};
+
+
+#ifdef FXVERSION
+#include <ArduboyFX.h>      // required to access the FX external flash
+#include "fx/fxdata.h"
+
+constexpr uint8_t DISPLAYSLOTS = SCREENCHARHEIGHT - 1;
+constexpr uint16_t FX_PAGESIZE = 256;
+constexpr uint16_t FX_SLOTSIZE = 256; //Size of each qr "slot" (this might not really be it)
+constexpr uint16_t FX_SLOTCOUNT = 4096 / FX_SLOTSIZE; // Wouldn't let me use the constant!
+
+// Add these together to get the real slot
+int8_t slot_offset = 0;
+int8_t slot_cursor = 0;
+
+// Display ALL slots. Just easier that way, too much moving around
+void displaySlots()
+{
+    arduboy.clear();
+    arduboy.setCursor(0,0);
+    arduboy.print(F("  --Select Slot:--   \n"));
+    char line[SCREENCHARWIDTH + 1] = {0};
+    line[1] = ':'; //These never change
+    line[2] = ' ';
+    for(uint8_t i = 0; i < DISPLAYSLOTS; i++)
+    {
+        uint8_t slot = slot_offset + i;
+        line[0] = 'A' + slot; //Slots are all named after letters
+        // Need to copy just a small portion. Also, for some reason, readSaveBytes didn't work?
+        FX::readDataBytes(savbuf + (slot * FX_SLOTSIZE), (uint8_t *)(line + 3), SCREENCHARWIDTH - 3);
+
+        setTextInvert(i == slot_cursor);
+        arduboy.print(line);
+        arduboy.print('\n');
+    }
+
+    setTextInvert(false);
+}
+
+inline uint8_t calculateSlot()
+{
+    return slot_offset + slot_cursor;
+}
+
+void displayCurrentSlot()
+{
+    uint8_t slot = calculateSlot();
+
+    arduboy.clear();
+    arduboy.setCursor(0,0);
+    arduboy.print(F("   --- Slot "));
+    arduboy.print(char('A' + slot));
+    arduboy.print(F(": ---   \n"));
+
+    // I'm literally pagging rn omg
+    // (I'm abusing the scratch buffer to build a single giant string for printing without
+    //  worrying about where the stupid 0 is)
+    uint8_t accum = 0;
+    for(uint8_t offset = 0; offset < MAXINPUT; offset += SCREENCHARWIDTH)
+    {
+        FX::readDataBytes(savbuf + (slot * FX_SLOTSIZE) + offset, (uint8_t *)(tempbuffer + offset + accum), SCREENCHARWIDTH);
+        tempbuffer[offset + accum] = '\n';
+        accum++;
+    }
+
+    tempbuffer[MAXINPUT + accum] = 0;
+
+    arduboy.print((char *)tempbuffer);
+}
+
+void copySlotToInput()
+{
+    uint8_t slot = calculateSlot();
+
+    //Safe to purely copy, the 0 is in there
+    FX::readDataBytes(savbuf + (slot * FX_SLOTSIZE), (uint8_t *)input, MAXINPUT);
+    input[MAXINPUT] = 0;
+}
+
+#endif
+
+
 
 
 
@@ -330,6 +408,17 @@ void setStateAbout()
     memset(input, 0, MAXINPUT + 1);
 }
 
+void setStateSlotSelect()
+{
+    state = GameState::SlotSelect;
+    resetKeyboard();
+    #ifdef FXVERSION
+    displaySlots();
+    #else
+    setStateEntry(); // If you accidentally call this, jump right into text entry
+    #endif
+}
+
 void setStateEntry()
 {
     arduboy.setFrameRate(FRAMERATE);
@@ -372,7 +461,48 @@ void loop()
     if(state == GameState::About)
     {
         if(arduboy.justPressed(A_BUTTON))
+            setStateSlotSelect();
+    }
+    else if(state == GameState::SlotSelect)
+    {
+        #ifdef FXVERSION
+        bool redraw = false;
+        if (doRepeat(UP_BUTTON)) {
+            slot_cursor--; redraw = true;
+        }
+        if (doRepeat(DOWN_BUTTON)) {
+            slot_cursor++; redraw = true;
+        }
+        if(slot_cursor < 0) {
+            slot_cursor = 0;
+            slot_offset = max(0, slot_offset - 1);
+        }
+        if(slot_cursor >= DISPLAYSLOTS) {
+            slot_cursor = DISPLAYSLOTS - 1;
+            slot_offset = min(FX_SLOTCOUNT - DISPLAYSLOTS, slot_offset + 1);
+        }
+        if(arduboy.justReleased(B_BUTTON)) {
+            redraw = true;
+        }
+
+        if(arduboy.pressed(A_BUTTON))
+        {
+            //Copy the mem into input
+            copySlotToInput();
             setStateEntry();
+        }
+        else if(arduboy.pressed(B_BUTTON))
+        {
+            // Just constantly display, hopefully not too laggy...?
+            displayCurrentSlot();
+        }
+        else if(redraw)
+        {
+            displaySlots();
+        }
+        #else
+        setStateEntry(); // You're not supposed to be here!
+        #endif
     }
     else if(state == GameState::Entry)
     {
