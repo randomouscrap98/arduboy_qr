@@ -1,4 +1,5 @@
-// No idea if this is how this works...
+// Need at least a small amount of data in the fx
+string whatever = "this is silly"
 
 savesection
 

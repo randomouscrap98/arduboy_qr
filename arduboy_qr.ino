@@ -103,7 +103,7 @@ void displaySlots()
         uint8_t slot = slot_offset + i;
         line[0] = 'A' + slot; //Slots are all named after letters
         // Need to copy just a small portion. Also, for some reason, readSaveBytes didn't work?
-        FX::readDataBytes(savbuf + (slot * FX_SLOTSIZE), (uint8_t *)(line + 3), SCREENCHARWIDTH - 3);
+        FX::readSaveBytes(savbuf + (slot * FX_SLOTSIZE), (uint8_t *)(line + 3), SCREENCHARWIDTH - 3);
 
         setTextInvert(i == slot_cursor);
         arduboy.print(line);
@@ -485,7 +485,7 @@ void loop()
             redraw = true;
         }
 
-        if(arduboy.pressed(A_BUTTON))
+        if(arduboy.justPressed(A_BUTTON))
         {
             //Copy the mem into input
             copySlotToInput();
