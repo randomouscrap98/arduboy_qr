@@ -103,7 +103,7 @@ void displaySlots()
         uint8_t slot = slot_offset + i;
         line[0] = 'A' + slot; //Slots are all named after letters
         // Need to copy just a small portion. Also, for some reason, readSaveBytes didn't work?
-        FX::readSaveBytes(savbuf + (slot * FX_SLOTSIZE), (uint8_t *)(line + 3), SCREENCHARWIDTH - 3);
+        fxReadSave((slot * FX_SLOTSIZE), (uint8_t *)(line + 3), SCREENCHARWIDTH - 3);
 
         setTextInvert(i == slot_cursor);
         arduboy.print(line);
@@ -116,6 +116,11 @@ void displaySlots()
 inline uint8_t calculateSlot()
 {
     return slot_offset + slot_cursor;
+}
+
+inline void fxReadSave(uint24_t offset, uint8_t * buffer, size_t length)
+{
+    FX::readDataBytes(FX_PAGESIZE + offset, buffer, length);
 }
 
 void displayCurrentSlot()
@@ -134,8 +139,8 @@ void displayCurrentSlot()
     uint8_t accum = 0;
     for(uint8_t offset = 0; offset < MAXINPUT; offset += SCREENCHARWIDTH)
     {
-        FX::readDataBytes(savbuf + (slot * FX_SLOTSIZE) + offset, (uint8_t *)(tempbuffer + offset + accum), SCREENCHARWIDTH);
-        tempbuffer[offset + accum] = '\n';
+        fxReadSave((slot * FX_SLOTSIZE) + offset, (uint8_t *)(tempbuffer + offset + accum), SCREENCHARWIDTH);
+        tempbuffer[offset + accum + SCREENCHARWIDTH] = '\n';
         accum++;
     }
 
@@ -149,7 +154,7 @@ void copySlotToInput()
     uint8_t slot = calculateSlot();
 
     //Safe to purely copy, the 0 is in there
-    FX::readDataBytes(savbuf + (slot * FX_SLOTSIZE), (uint8_t *)input, MAXINPUT);
+    fxReadSave((slot * FX_SLOTSIZE), (uint8_t *)input, MAXINPUT);
     input[MAXINPUT] = 0;
 }
 

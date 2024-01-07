@@ -1,11 +1,17 @@
 # Add your special strings here
 DEBUGDATA = [
     "https://link1",
+    "...",
     "https://link2",
+    "...",
     "ABC123",
+    "...",
     "four",
+    "...",
     "http://five.com",
+    "...",
     "https://SIXSIXSIXTHENUMBEROFTHEBEAST.com",
+    "...",
 ]
 
 data = bytearray([255] * 4096)
