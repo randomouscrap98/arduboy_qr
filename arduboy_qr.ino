@@ -582,16 +582,11 @@ void loop()
     }
     else if(state == GameState::Display)
     {
-        //if(!temp_disable_slots) //Reuse variable
-        //{
-        //    fxWriteSave();
-        //    temp_disable_slots = true;
-        //}
-
         // Special combo to exit qr
         if (arduboy.pressed(COMBO_HIDEQR))
         {
             setStateSlotSelect();
+            temp_disable_slots = true;
         }
     }
 
