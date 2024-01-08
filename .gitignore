@@ -10,3 +10,8 @@ __pycache__/
 *.swq
 
 ignore/
+
+fx/arduboy/
+fx/requirements.txt
+fx/runall.bat
+fx/genfx.py
