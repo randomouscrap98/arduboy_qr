@@ -12,10 +12,11 @@ constexpr uint8_t FRAMERATE = 60;
 constexpr uint8_t QRFRAMERATE = 5;
 
 // Constants for QR code generation. You generally don't want to change these
-const uint8_t QR_MAXVERSION = 9;
+const uint8_t QR_MAXVERSION = 10;
 const qrcodegen_Ecc QR_MINECC = qrcodegen_Ecc_MEDIUM;
 const bool QR_BOOSTECL = true;
 const uint8_t QR_OVERDRAW = 2; //Amount on each side to overdraw the qr rect
+const uint16_t QR_BUFSIZE = qrcodegen_BUFFER_LEN_FOR_VERSION(QR_MAXVERSION);
 
 // Dimensions of screen in characters (for normal font)
 constexpr uint8_t FONT_WIDTH = 6;
@@ -67,8 +68,7 @@ enum GameState {
 char input[MAXINPUT + 1];
 
 //Just preallocate the maximum supported buffer size
-uint8_t qrbuffer[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_MAXVERSION)];
-uint8_t tempbuffer[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_MAXVERSION)];
+uint8_t allbuffer[2 * QR_BUFSIZE];
 
 uint8_t kbx, kby, okbx, okby;
 GameState state;
@@ -81,95 +81,59 @@ unsigned long buttonRepeats[BUTTONCOUNT] = {0};
 #include "fx/fxdata.h"
 
 constexpr uint8_t DISPLAYSLOTS = SCREENCHARHEIGHT - 1;
-constexpr uint16_t FX_PAGESIZE = 256;
-constexpr uint16_t FX_SLOTSIZE = 256; //Size of each qr "slot" (this might not really be it)
-constexpr uint16_t FX_UNUSED = 128;
-constexpr uint16_t FX_SLOTCOUNT = 4096 / FX_SLOTSIZE; // Wouldn't let me use the constant!
+constexpr uint8_t FX_SLOTCOUNT = (2 * QR_BUFSIZE) / sizeof(input);
+
+typedef struct 
+{
+    char inputs[FX_SLOTCOUNT][sizeof(input)];
+} SaveData;
 
 // Add these together to get the real slot
-int8_t slot_offset = 0;
-int8_t slot_cursor = 0;
-uint8_t temp_disable_slots = false;
+uint8_t slot_cursor = 0;
 
-// Display ALL slots. Just easier that way, too much moving around
-void displaySlots()
+// Load all the slots out of FX into the giant allbuffer
+void loadSlots()
 {
-    arduboy.clear();
-    arduboy.setCursor(0,0);
-    arduboy.print(F("  --Select Slot:--   \n"));
-    char line[SCREENCHARWIDTH + 1] = {0};
-    line[1] = ':'; //These never change
-    line[2] = ' ';
-    for(uint8_t i = 0; i < DISPLAYSLOTS; i++)
+    SaveData& savedata = *(SaveData*)allbuffer;
+    if(!FX::loadGameState(savedata))
     {
-        uint8_t slot = slot_offset + i;
-        line[0] = 'A' + slot; //Slots are all named after letters
-        // Need to copy just a small portion. Also, for some reason, readSaveBytes didn't work?
-        fxReadSave((slot * FX_SLOTSIZE), (uint8_t *)(line + 3), SCREENCHARWIDTH - 3);
-
-        setTextInvert(i == slot_cursor);
-        arduboy.print(line);
-        arduboy.print('\n');
+        //This is a new state, initialize all to 0
+        for(uint8_t i = 0; i < FX_SLOTCOUNT; i++)
+            savedata.inputs[i][0] = 0;
     }
-
-    setTextInvert(false);
 }
 
-inline uint8_t calculateSlot()
+// Save the slots (must be valid at point of writing of course)
+void saveSlots()
 {
-    return slot_offset + slot_cursor;
-}
-
-inline void fxReadSave(uint24_t offset, uint8_t * buffer, size_t length)
-{
-    FX::readSaveBytes(offset, buffer, length);
+    SaveData& savedata = *(SaveData*)allbuffer;
+    FX::saveGameState(savedata);
 }
 
 void displayCurrentSlot()
 {
-    uint8_t slot = calculateSlot();
-
     arduboy.clear();
     arduboy.setCursor(0,0);
-    arduboy.print(F("   --- Slot "));
-    arduboy.print(char('A' + slot));
-    arduboy.print(F(": ---   \n"));
+    arduboy.print(F("   --< Slot "));
+    arduboy.print(char('A' + slot_cursor));
+    arduboy.print(F(": >--   \n"));
+    
+    SaveData * data = (SaveData *)allbuffer;
+    uint8_t dlen = strlen(data->inputs[slot_cursor]);
+    char line[SCREENCHARWIDTH + 1] = {0};
 
-    // I'm literally pagging rn omg
-    // (I'm abusing the scratch buffer to build a single giant string for printing without
-    //  worrying about where the stupid 0 is)
-    uint8_t accum = 0;
-    for(uint8_t offset = 0; offset < MAXINPUT; offset += SCREENCHARWIDTH)
+    for(uint8_t offset = 0; offset < dlen; offset += SCREENCHARWIDTH)
     {
-        fxReadSave((slot * FX_SLOTSIZE) + offset, (uint8_t *)(tempbuffer + offset + accum), SCREENCHARWIDTH);
-        tempbuffer[offset + accum + SCREENCHARWIDTH] = '\n';
-        accum++;
+        memcpy(line, data->inputs[slot_cursor] + offset, SCREENCHARWIDTH);
+        arduboy.println(line);
+        arduboy.print("\n");
     }
-
-    tempbuffer[MAXINPUT + accum] = 0;
-
-    arduboy.print((char *)tempbuffer);
 }
 
 void copySlotToInput()
 {
-    uint8_t slot = calculateSlot();
-
-    //Safe to purely copy, the 0 is in there (MAXINPUT + 1 to include 0 on mega long string)
-    fxReadSave((slot * FX_SLOTSIZE), (uint8_t *)input, MAXINPUT + 1);
-    input[MAXINPUT] = 0;
-}
-
-void fxWriteSave()
-{
-    //Need to copy the contents of input into the temp buffer, since this function
-    //writes a WHOLE page
-    uint8_t slot = calculateSlot();
-    memcpy(tempbuffer, input, MAXINPUT + 1);
-    //Preserve the other part of the save (this is just for now)
-    //fxReadSave(slot * FX_SLOTSIZE + (FX_SLOTSIZE - FX_UNUSED), tempbuffer + FX_UNUSED, FX_UNUSED);
-    //Currently, each slot is precisely the page size
-    FX::writeSavePage(slot, tempbuffer);
+    SaveData * data = (SaveData *)allbuffer;
+    memcpy(input, data->inputs[slot_cursor], sizeof(input));
 }
 
 #endif
@@ -377,13 +341,13 @@ bool generateQr(char * text)
 {
     //"https://github.com/nayuki/QR-Code-generator/tree/master/c",
     return qrcodegen_encodeText(
-        text, tempbuffer, qrbuffer, 
+        text, allbuffer + QR_BUFSIZE, allbuffer, 
         QR_MINECC, qrcodegen_VERSION_MIN, QR_MAXVERSION, qrcodegen_Mask_AUTO, QR_BOOSTECL);
 }
 
 void drawQr()
 {
-    int size = qrcodegen_getSize(qrbuffer);
+    int size = qrcodegen_getSize(allbuffer);
     int sizemod = floor((float)(HEIGHT - 2 * QR_OVERDRAW) / size);
     int realsize = sizemod * size;
     int startx = (WIDTH - realsize - 2 * QR_OVERDRAW) / 2;
@@ -395,7 +359,7 @@ void drawQr()
     for (int y = 0; y < size; y++) {
         for (int x = 0; x < size; x++) {
             // Silly, but we technically only need to draw the black pixels. It's slightly less code too?
-            if(qrcodegen_getModule(qrbuffer, x, y)) {
+            if(qrcodegen_getModule(allbuffer, x, y)) {
                 arduboy.fillRect(startx + x * sizemod + QR_OVERDRAW, starty + y * sizemod + QR_OVERDRAW, sizemod, sizemod, BLACK);
             }
         }
@@ -425,7 +389,7 @@ void setStateAbout()
     arduboy.print(F(" chars    \n"));
 
     // This way, it's only reset if you go all the way to the title screen
-    memset(input, 0, MAXINPUT + 1);
+    memset(input, 0, sizeof(input));
 }
 
 void setStateSlotSelect()
@@ -434,7 +398,9 @@ void setStateSlotSelect()
     state = GameState::SlotSelect;
     resetKeyboard();
     #ifdef FXVERSION
-    displaySlots();
+    loadSlots();
+    displayCurrentSlot();
+    //displaySlots();
     #else
     setStateEntry(); // If you accidentally call this, jump right into text entry
     #endif
@@ -488,47 +454,24 @@ void loop()
     {
         #ifdef FXVERSION
         bool redraw = false;
-        if(!temp_disable_slots)
+        if (doRepeat(LEFT_BUTTON))
         {
-            if (doRepeat(UP_BUTTON))
-            {
-                slot_cursor--;
-                redraw = true;
-            }
-            if (doRepeat(DOWN_BUTTON))
-            {
-                slot_cursor++;
-                redraw = true;
-            }
-        }
-        if(slot_cursor < 0) {
-            slot_cursor = 0;
-            slot_offset = max(0, slot_offset - 1);
-        }
-        if(slot_cursor >= DISPLAYSLOTS) {
-            slot_cursor = DISPLAYSLOTS - 1;
-            slot_offset = min(FX_SLOTCOUNT - DISPLAYSLOTS, slot_offset + 1);
-        }
-        if(arduboy.justReleased(B_BUTTON)) {
+            MENUWRAP(slot_cursor, FX_SLOTCOUNT, -1);
             redraw = true;
-            temp_disable_slots = false;
         }
-
+        if (doRepeat(RIGHT_BUTTON))
+        {
+            MENUWRAP(slot_cursor, FX_SLOTCOUNT, 1);
+            redraw = true;
+        }
         if(arduboy.justPressed(A_BUTTON))
         {
-            //Copy the mem into input
-            temp_disable_slots = false;
             copySlotToInput();
             setStateEntry();
         }
-        else if(arduboy.pressed(B_BUTTON) && !temp_disable_slots)
+        if(redraw)
         {
-            // Just constantly display, hopefully not too laggy...?
             displayCurrentSlot();
-        }
-        else if(redraw)
-        {
-            displaySlots();
         }
         #else
         setStateEntry(); // You're not supposed to be here!
@@ -565,7 +508,7 @@ void loop()
         if (arduboy.pressed(COMBO_SHOWQR))
         {
             #ifdef FXVERSION
-            fxWriteSave();
+            saveSlots();
             #endif
             setStateDisplay();
         }
@@ -584,10 +527,7 @@ void loop()
     {
         // Special combo to exit qr
         if (arduboy.pressed(COMBO_HIDEQR))
-        {
             setStateSlotSelect();
-            temp_disable_slots = true;
-        }
     }
 
     doDisplay();
