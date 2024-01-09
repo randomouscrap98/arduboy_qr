@@ -44,6 +44,8 @@ ButtonRepeater repeater(&arduboy);
 char input[MAXINPUT + 1];
 uint8_t allbuffer[2 * QR_BUFSIZE];
 
+bool temp_disable_slots = false;
+
 
 #ifdef FXVERSION
 #include <ArduboyFX.h>      // required to access the FX external flash
@@ -325,13 +327,15 @@ void loop()
     {
         #ifdef FXVERSION
         uint8_t osc = slot_cursor;
-        if(!arduboy.pressed(B_BUTTON))
+        if(!temp_disable_slots)
         {
             if (repeater.repeat(LEFT_BUTTON))
                 MENUWRAP(slot_cursor, FX_SLOTCOUNT, -1);
             if (repeater.repeat(RIGHT_BUTTON))
                 MENUWRAP(slot_cursor, FX_SLOTCOUNT, 1);
         }
+        if(!arduboy.anyPressed(DIR_BUTTONS))
+            temp_disable_slots = false;
         if(arduboy.justPressed(A_BUTTON))
         {
             copySlotToInput();
@@ -387,7 +391,10 @@ void loop()
     {
         // Special combo to exit qr
         if (arduboy.pressed(COMBO_HIDEQR))
+        {
             setStateSlotSelect();
+            temp_disable_slots = true;
+        }
     }
 
     doDisplay();
