@@ -115,8 +115,8 @@ void displayCurrentSlot()
     arduboy.clear();
     arduboy.setCursor(0,0);
     arduboy.print(F("   --< Slot "));
-    arduboy.print(char('A' + slot_cursor));
-    arduboy.print(F(": >--   \n"));
+    arduboy.print(slot_cursor + 1); //char('A' + slot_cursor));
+    arduboy.print(F(": >--   \n\n"));
     
     SaveData * data = (SaveData *)allbuffer;
     uint8_t dlen = strlen(data->inputs[slot_cursor]);
@@ -134,6 +134,12 @@ void copySlotToInput()
 {
     SaveData * data = (SaveData *)allbuffer;
     memcpy(input, data->inputs[slot_cursor], sizeof(input));
+}
+
+void copyInputToSlot()
+{
+    SaveData * data = (SaveData *)allbuffer;
+    memcpy(data->inputs[slot_cursor], input, sizeof(input));
 }
 
 #endif
@@ -453,23 +459,20 @@ void loop()
     else if(state == GameState::SlotSelect)
     {
         #ifdef FXVERSION
-        bool redraw = false;
-        if (doRepeat(LEFT_BUTTON))
+        uint8_t osc = slot_cursor;
+        if(!arduboy.pressed(B_BUTTON))
         {
-            MENUWRAP(slot_cursor, FX_SLOTCOUNT, -1);
-            redraw = true;
-        }
-        if (doRepeat(RIGHT_BUTTON))
-        {
-            MENUWRAP(slot_cursor, FX_SLOTCOUNT, 1);
-            redraw = true;
+            if (doRepeat(LEFT_BUTTON))
+                MENUWRAP(slot_cursor, FX_SLOTCOUNT, -1);
+            if (doRepeat(RIGHT_BUTTON))
+                MENUWRAP(slot_cursor, FX_SLOTCOUNT, 1);
         }
         if(arduboy.justPressed(A_BUTTON))
         {
             copySlotToInput();
             setStateEntry();
         }
-        if(redraw)
+        if(osc != slot_cursor)
         {
             displayCurrentSlot();
         }
@@ -508,6 +511,7 @@ void loop()
         if (arduboy.pressed(COMBO_SHOWQR))
         {
             #ifdef FXVERSION
+            copyInputToSlot();
             saveSlots();
             #endif
             setStateDisplay();
